@@ -12,10 +12,11 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 44100
 CHUNK = 1024
-THRESHOLD = 20000  # Scale to an appropriate value for 16-bit audio
+THRESHOLD = 30000  # Scale to an appropriate value for 16-bit audio
 RECORD_SECONDS = 5
 WAVE_OUTPUT_FILENAME = "file.wav"
 BUFFER_SECONDS = 0.5  # How many seconds to keep in buffer before the trigger
+GAIN_FACTOR = 50  # Adjust this factor based on desired output volume
 
 
 class AudioMonitor:
@@ -26,7 +27,9 @@ class AudioMonitor:
         # Filter setup
         self.nyquist: float = RATE / 2
         self.cutoff: float = 150  # Cutoff frequency for bass boost
-        self.b, self.a = scipy.signal.butter(1, self.cutoff / self.nyquist, btype="low")
+        self.b, self.a = scipy.signal.butter(
+            1, self.cutoff / self.nyquist, btype="lowpass"
+        )
         self.send_message: Callable[[str], None] = None
 
     def get_amplitude(self, data: bytes) -> int:
@@ -45,8 +48,7 @@ class AudioMonitor:
         # Apply the low-pass filter
         filtered_signal = scipy.signal.lfilter(b, a, signal)
         # Apply a gain factor to compensate for any attenuation
-        gain_factor = 15  # Adjust this factor based on desired output volume
-        filtered_signal = filtered_signal * gain_factor
+        filtered_signal = filtered_signal * GAIN_FACTOR
         # Ensure the signal does not exceed 16-bit limits after gain
         filtered_signal = np.clip(filtered_signal, -32768, 32767)
         # Convert filtered data back to bytes
@@ -62,6 +64,7 @@ class AudioMonitor:
             data = stream.read(CHUNK)
             frames.append(data)
         processed_frames = self.amplify_bass(frames)
+        print("done recording")
         return processed_frames
 
     def save_playback(self, frames: bytes):
@@ -89,7 +92,6 @@ class AudioMonitor:
         play_stream.stop_stream()
         play_stream.close()
         wf.close()
-        time.sleep(0.5)
 
     async def monitor(self):
         i = 0
@@ -125,7 +127,18 @@ class AudioMonitor:
                         await asyncio.sleep(0.01)
                     frames = self.record_sound(self.buffer_frames)
                     self.save_playback(frames)
+                    await asyncio.sleep(0.001)
                     self.buffer_frames = []  # Clear buffer after recording
+                    stream.stop_stream()
+                    stream.close()
+                    stream = p.open(
+                        format=FORMAT,
+                        channels=CHANNELS,
+                        rate=RATE,
+                        input=True,
+                        frames_per_buffer=CHUNK,
+                    )
+                    print("moving on")
 
                 if i == 10:
                     i = 0
