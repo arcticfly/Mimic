@@ -111,6 +111,7 @@ class AudioMonitor:
                         self.send_message(
                             f"Loud sound detected - amplitude: {amplitude}"
                         )
+                        await asyncio.sleep(0.01)
                     frames = self.record_sound(self.buffer_frames)
                     self.save_playback(frames)
                     self.buffer_frames = []  # Clear buffer after recording
