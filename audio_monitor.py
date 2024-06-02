@@ -11,7 +11,7 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 44100
 CHUNK = 1024
-THRESHOLD = 1000  # Scale to an appropriate value for 16-bit audio
+THRESHOLD = 3000  # Scale to an appropriate value for 16-bit audio
 RECORD_SECONDS = 5
 WAVE_OUTPUT_FILENAME = "file.wav"
 BUFFER_SECONDS = 0.5  # How many seconds to keep in buffer before the trigger
@@ -19,42 +19,51 @@ BUFFER_SECONDS = 0.5  # How many seconds to keep in buffer before the trigger
 
 class AudioMonitor:
     def __init__(self):
-        self.monitoring = False
-        self.buffer_frames = []
-        self.max_buffer_frames = int(RATE / CHUNK * BUFFER_SECONDS)
+        self.monitoring: bool = False
+        self.buffer_frames: list[bytes] = []
+        self.max_buffer_frames: int = int(RATE / CHUNK * BUFFER_SECONDS)
         # Filter setup
-        self.nyquist = RATE / 2
-        self.cutoff = 150  # Cutoff frequency for bass boost
+        self.nyquist: float = RATE / 2
+        self.cutoff: float = 150  # Cutoff frequency for bass boost
         self.b, self.a = scipy.signal.butter(1, self.cutoff / self.nyquist, btype="low")
-        self.send_message = None
+        self.send_message: Callable[[str], None] = None
 
-    def get_amplitude(self, data):
-        print(np.max(np.frombuffer(data, dtype=np.int16)))
-        return np.max(np.frombuffer(data, dtype=np.int16))
+    def get_amplitude(self, data: bytes) -> int:
+        processed_frame = self.amplify_bass([data])
+        print(np.max(np.frombuffer(processed_frame, dtype=np.int16)))
+        return np.max(np.frombuffer(processed_frame, dtype=np.int16))
 
-    def process_audio(self, frames):
-        """Apply bass boost filter to the audio frames."""
+    def amplify_bass(self, frames: list[bytes]) -> bytes:
+        """Apply bass boost filter with frequency weighting and gain adjustment to the audio frames."""
+        # Concatenate byte frames into a single array
+        raw_data = b"".join(frames)
         # Convert byte data to numpy array
-        audio_signal = np.frombuffer(b"".join(frames), dtype=np.int16)
-        # Filter the audio signal
-        filtered_signal = scipy.signal.lfilter(self.b, self.a, audio_signal)
-        # Amplify the bass frequencies
-        filtered_signal *= 20  # Increase volume by a factor of 2
-        # Clip the signal to avoid overflow in 16-bit signed integer
+        signal = np.frombuffer(raw_data, dtype=np.int16)
+        # Using a higher-order filter for a steeper cutoff
+        b, a = scipy.signal.butter(4, self.cutoff / self.nyquist, btype="low")
+        # Apply the low-pass filter
+        filtered_signal = scipy.signal.lfilter(b, a, signal)
+        # Apply a gain factor to compensate for any attenuation
+        gain_factor = 15  # Adjust this factor based on desired output volume
+        filtered_signal = filtered_signal * gain_factor
+        # Ensure the signal does not exceed 16-bit limits after gain
         filtered_signal = np.clip(filtered_signal, -32768, 32767)
-        # Convert numpy array back to byte format
-        return filtered_signal.astype(np.int16).tobytes()
+        # Convert filtered data back to bytes
+        processed_data = filtered_signal.astype(np.int16).tobytes()
+        return processed_data
 
-    def record_sound(self, buffer, duration=RECORD_SECONDS):
+    def record_sound(
+        self, buffer: list[bytes], duration: float = RECORD_SECONDS
+    ) -> bytes:
         print("Recording...")
         frames = list(buffer)  # Start with buffered audio
         for i in range(0, int(RATE / CHUNK * duration) - len(buffer)):
             data = stream.read(CHUNK)
             frames.append(data)
-        processed_frames = self.process_audio(frames)
+        processed_frames = self.amplify_bass(frames)
         return processed_frames
 
-    def save_playback(self, frames):
+    def save_playback(self, frames: bytes):
         wf = wave.open(WAVE_OUTPUT_FILENAME, "wb")
         wf.setnchannels(CHANNELS)
         wf.setsampwidth(p.get_sample_size(FORMAT))
@@ -127,7 +136,7 @@ class AudioMonitor:
             p.terminate()
             print("Stopped monitoring.")
 
-    async def start_monitoring(self, send_message: Callable[[str], None]):
+    async def start_monitoring(self, send_message: Callable[[str], None] | None = None):
         self.monitoring = True
         self.send_message = send_message
         await self.monitor()
