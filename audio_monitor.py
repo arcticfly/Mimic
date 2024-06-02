@@ -4,6 +4,7 @@ import wave
 import asyncio
 import scipy.signal
 from typing import Callable
+import time
 
 
 # Constants
@@ -11,7 +12,7 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 44100
 CHUNK = 1024
-THRESHOLD = 3000  # Scale to an appropriate value for 16-bit audio
+THRESHOLD = 12000  # Scale to an appropriate value for 16-bit audio
 RECORD_SECONDS = 5
 WAVE_OUTPUT_FILENAME = "file.wav"
 BUFFER_SECONDS = 0.5  # How many seconds to keep in buffer before the trigger
@@ -88,6 +89,7 @@ class AudioMonitor:
         play_stream.stop_stream()
         play_stream.close()
         wf.close()
+        time.sleep(0.5)
 
     async def monitor(self):
         i = 0
