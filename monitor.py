@@ -48,7 +48,8 @@ async def poll_updates():
 
 if __name__ == "__main__":
     try:
-        asyncio.run(poll_updates())
+        asyncio.run(audio_monitor.start_monitoring())
+        # asyncio.run(poll_updates())
     except KeyboardInterrupt:
         pass
     finally:
