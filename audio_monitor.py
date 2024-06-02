@@ -3,13 +3,15 @@ import numpy as np
 import wave
 import asyncio
 import scipy.signal
+from typing import Callable
+
 
 # Constants
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 44100
 CHUNK = 1024
-THRESHOLD = 500  # Scale to an appropriate value for 16-bit audio
+THRESHOLD = 1000  # Scale to an appropriate value for 16-bit audio
 RECORD_SECONDS = 5
 WAVE_OUTPUT_FILENAME = "file.wav"
 BUFFER_SECONDS = 0.5  # How many seconds to keep in buffer before the trigger
@@ -24,12 +26,11 @@ class AudioMonitor:
         self.nyquist = RATE / 2
         self.cutoff = 150  # Cutoff frequency for bass boost
         self.b, self.a = scipy.signal.butter(1, self.cutoff / self.nyquist, btype="low")
+        self.send_message = None
 
-    def is_loud(self, data, threshold):
-        """Check if the data contains sounds louder than the threshold."""
+    def get_amplitude(self, data):
         print(np.max(np.frombuffer(data, dtype=np.int16)))
-        amplitude = np.max(np.frombuffer(data, dtype=np.int16))
-        return amplitude > threshold
+        return np.max(np.frombuffer(data, dtype=np.int16))
 
     def process_audio(self, frames):
         """Apply bass boost filter to the audio frames."""
@@ -103,12 +104,18 @@ class AudioMonitor:
                         0
                     )  # Remove oldest frame to maintain buffer size
 
-                if self.is_loud(input_data, THRESHOLD):
+                amplitude = self.get_amplitude(input_data)
+
+                if amplitude > THRESHOLD:
+                    if self.send_message:
+                        self.send_message(
+                            f"Loud sound detected - amplitude: {amplitude}"
+                        )
                     frames = self.record_sound(self.buffer_frames)
                     self.save_playback(frames)
                     self.buffer_frames = []  # Clear buffer after recording
 
-                if i == 30:
+                if i == 10:
                     i = 0
                     # Allow other tasks to run
                     await asyncio.sleep(0.001)
@@ -119,8 +126,9 @@ class AudioMonitor:
             p.terminate()
             print("Stopped monitoring.")
 
-    async def start_monitoring(self):
+    async def start_monitoring(self, send_message: Callable[[str], None]):
         self.monitoring = True
+        self.send_message = send_message
         await self.monitor()
 
     def stop_monitoring(self):
