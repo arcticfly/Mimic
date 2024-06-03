@@ -22,11 +22,14 @@ async def handle_update(bot: Bot, update_id: int) -> int:
         next_update_id = update.update_id + 1
         if update.message and update.message.text:
             print(f"Received message: {update.message.text}")
-            # Send message back
-            await bot.send_message(
-                chat_id=update.message.chat.id,
-                text="Received message: " + update.message.text,
-            )
+            try:
+                # Send message back
+                await bot.send_message(
+                    chat_id=update.message.chat.id,
+                    text="Received message: " + update.message.text,
+                )
+            except:
+                print("Failed to send message")
             if update.message.text == "on" and not audio_monitor.monitoring:
 
                 def send_message(message: str):
